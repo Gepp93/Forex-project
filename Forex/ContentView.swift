@@ -23,139 +23,181 @@ struct CandleStick: Identifiable {
 }
 
 struct ContentView: View {
-    @State private var bullishProbability: Double = 65
-    @State private var bearishProbability: Double = 35
-    @State private var tradeSignal: String = "WAIT"
-    
-    // Sample candlestick data
-    @State private var candleData: [CandleStick] = [
-        CandleStick(date: Date().addingTimeInterval(-3600 * 24), open: 1.0840, high: 1.0860, low: 1.0830, close: 1.0850),
-        CandleStick(date: Date().addingTimeInterval(-3600 * 18), open: 1.0850, high: 1.0870, low: 1.0845, close: 1.0855),
-        CandleStick(date: Date().addingTimeInterval(-3600 * 12), open: 1.0855, high: 1.0865, low: 1.0835, close: 1.0840),
-        CandleStick(date: Date().addingTimeInterval(-3600 * 6), open: 1.0840, high: 1.0880, low: 1.0840, close: 1.0860),
-        CandleStick(date: Date(), open: 1.0860, high: 1.0875, low: 1.0855, close: 1.0865)
-    ]
-    
-    // Add trade opportunities
-    @State private var buyOpportunity = TradeOpportunity(
-        type: .buy,
-        targetPrice: 1.0820,
-        probability: 75,
-        timeframe: "4H"
-    )
-    
-    @State private var sellOpportunity = TradeOpportunity(
-        type: .sell,
-        targetPrice: 1.0890,
-        probability: 68,
-        timeframe: "4H"
-    )
+    @StateObject private var viewModel = ContentViewModel()
+    @State private var selectedTimeFrame: TimeFrame = .minutes15
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                // TradingView Chart
-                TradingViewChart()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: UIScreen.main.bounds.height * 0.4)
-                    .background(Color(.systemBackground))
-                    .shadow(radius: 2)
-                
-                ScrollView {
-                    VStack(spacing: 20) {
-                        // Trade Opportunities Section
-                        VStack(spacing: 12) {
-                            OpportunityView(opportunity: buyOpportunity)
-                            OpportunityView(opportunity: sellOpportunity)
-                        }
-                        .padding(.horizontal)
-                        
-                        // Trade Signal Section
-                        Text(tradeSignal)
-                            .font(.system(size: 42, weight: .bold))
-                            .foregroundColor(signalColor)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(signalColor.opacity(0.1))
-                            .cornerRadius(15)
-                        
-                        // Probability Indicators
-                        HStack(spacing: 15) {
-                            // Bullish Probability
-                            VStack(spacing: 5) {
-                                Text("Bullish")
-                                    .font(.subheadline)
-                                ZStack {
-                                    Circle()
-                                        .stroke(lineWidth: 6)
-                                        .opacity(0.3)
-                                        .foregroundColor(.green)
-                                    
-                                    Circle()
-                                        .trim(from: 0.0, to: CGFloat(bullishProbability) / 100)
-                                        .stroke(style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
-                                        .foregroundColor(.green)
-                                        .rotationEffect(.degrees(-90))
-                                    
-                                    Text("\(Int(bullishProbability))%")
-                                        .font(.system(size: 16, weight: .bold))
-                                }
-                                .frame(width: 70, height: 70)
-                            }
-                            
-                            // Bearish Probability
-                            VStack(spacing: 5) {
-                                Text("Bearish")
-                                    .font(.subheadline)
-                                ZStack {
-                                    Circle()
-                                        .stroke(lineWidth: 6)
-                                        .opacity(0.3)
-                                        .foregroundColor(.red)
-                                    
-                                    Circle()
-                                        .trim(from: 0.0, to: CGFloat(bearishProbability) / 100)
-                                        .stroke(style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
-                                        .foregroundColor(.red)
-                                        .rotationEffect(.degrees(-90))
-                                    
-                                    Text("\(Int(bearishProbability))%")
-                                        .font(.system(size: 16, weight: .bold))
-                                }
-                                .frame(width: 70, height: 70)
-                            }
-                        }
-                        .padding(.vertical, 10)
-                        
-                        // Indicator List
-                        VStack {
-                            IndicatorRow(name: "Moving Averages", value: 65, type: "Bullish")
-                            IndicatorRow(name: "RSI", value: 45, type: "Bearish")
-                            IndicatorRow(name: "MACD", value: 75, type: "Bullish")
-                            IndicatorRow(name: "Pattern", value: 30, type: "Bearish")
-                        }
-                        .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
-                        .shadow(radius: 2)
-                    }
-                    .padding(.vertical)
+        VStack {
+            // TradingView Chart
+            WebView(urlString: "https://www.tradingview.com/chart/?symbol=EURUSD")
+                .frame(height: 400)
+            
+            // Time Frame Selector
+            Picker("Time Frame", selection: $selectedTimeFrame) {
+                ForEach(TimeFrame.allCases) { timeFrame in
+                    Text(timeFrame.display).tag(timeFrame)
                 }
             }
-            .navigationTitle("EUR/USD Analysis")
+            .pickerStyle(.segmented)
+            .padding()
+            .onChange(of: selectedTimeFrame) { oldValue, newValue in
+                viewModel.updateAnalysis(for: newValue)
+            }
+            
+            // Market Analysis Section
+            ScrollView {
+                VStack(spacing: 15) {
+                    Text("Market Analysis (\(selectedTimeFrame.display))")
+                        .font(.title2)
+                        .padding(.bottom, 5)
+                    
+                    // Key Price Levels
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Key Price Levels")
+                            .font(.headline)
+                        
+                        ForEach(viewModel.priceZones) { zone in
+                            PriceZoneRow(zone: zone)
+                        }
+                        
+                        if let targetPrice = viewModel.nextTargetPrice {
+                            Text("Next Target: \(targetPrice, specifier: "%.4f")")
+                                .font(.subheadline)
+                                .padding(.top, 2)
+                        }
+                    }
+                    .padding()
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(10)
+                    
+                    // Technical Analysis
+                    VStack(spacing: 10) {
+                        Text("Technical Analysis")
+                            .font(.headline)
+                        
+                        IndicatorRow(name: "RSI", value: viewModel.rsiValue, type: viewModel.rsiValue > 50 ? "Bullish" : "Bearish")
+                        IndicatorRow(name: "MACD", value: viewModel.macdValue, type: viewModel.macdValue > 0 ? "Bullish" : "Bearish")
+                        IndicatorRow(name: "Moving Average", value: viewModel.maValue, type: viewModel.maValue > 50 ? "Bullish" : "Bearish")
+                    }
+                    .padding()
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(10)
+                    
+                    // Economic Calendar Events
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Upcoming Market Events")
+                            .font(.headline)
+                        
+                        ForEach(viewModel.economicEvents) { event in
+                            HStack {
+                                Text(event.time)
+                                    .font(.subheadline)
+                                Text(event.description)
+                                Spacer()
+                                Text(event.impact)
+                                    .foregroundColor(event.impact == "High" ? .red : .orange)
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(10)
+                    
+                    // Trade Setup Analysis
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Potential Trade Setups")
+                            .font(.headline)
+                        
+                        ForEach(viewModel.tradeSetups) { setup in
+                            TradeSetupView(setup: setup)
+                        }
+                    }
+                    .padding()
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(10)
+                }
+                .padding()
+            }
         }
+    }
+}
+
+struct PriceZoneRow: View {
+    let zone: PriceZone
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(zone.type.rawValue)
+                    .font(.subheadline)
+                    .foregroundColor(zone.type == .resistance ? .red : .green)
+                Spacer()
+                Text(String(format: "%.4f", zone.price))
+                Text("(\(zone.strength.rawValue))")
+                    .foregroundColor(zone.strength == .strong ? .red : .orange)
+            }
+            
+            if !zone.notes.isEmpty {
+                Text(zone.notes)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+}
+
+struct KeyLevelRow: View {
+    let type: String
+    let price: Double
+    let strength: String
+    
+    var body: some View {
+        HStack {
+            Text(type)
+                .font(.subheadline)
+            Spacer()
+            Text(String(format: "%.4f", price))
+            Text("(\(strength))")
+                .foregroundColor(strength == "Strong" ? .red : .orange)
+        }
+    }
+}
+
+struct TradeSetupView: View {
+    let setup: TradeSetup
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(setup.direction == .long ? "Potential Long Setup" : "Potential Short Setup")
+                .font(.subheadline)
+                .foregroundColor(setup.direction == .long ? .green : .red)
+            
+            Text("Entry Zone: \(setup.entryZone)")
+            Text("Take Profit: \(setup.takeProfit)")
+            Text("Risk/Reward: \(setup.riskReward)")
+            
+            if !setup.notes.isEmpty {
+                Text(setup.notes)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 5)
+    }
+}
+
+struct WebView: UIViewRepresentable {
+    let urlString: String
+    
+    func makeUIView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        if let url = URL(string: urlString) {
+            webView.load(URLRequest(url: url))
+        }
+        return webView
     }
     
-    private var signalColor: Color {
-        switch tradeSignal {
-        case "BUY":
-            return .green
-        case "SELL":
-            return .red
-        default:
-            return .orange
-        }
-    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
 struct IndicatorRow: View {
